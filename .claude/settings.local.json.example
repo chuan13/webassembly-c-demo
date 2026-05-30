@@ -1,0 +1,5 @@
+{
+    "env": {
+        "EMSDK_PATH": "C:\\path\\to\\emsdk"
+    }
+}

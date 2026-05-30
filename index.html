@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wasm 圖片批次處理工具</title>
+    <link rel="stylesheet" href="index.css">
+    <!-- 引入 JSZip 庫 (CDN) 用於打包 ZIP 檔案 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+</head>
+<body>
+
+    <header>
+        <div>
+            <h1>Wasm 圖片批次處理工具</h1>
+            <p class="subtitle">基於 WebAssembly (C) 的高效圖片裁切、旋轉與濾鏡批次處理工具</p>
+        </div>
+    </header>
+
+    <main class="top-layout">
+        <!-- 左上方：檔案上傳與管理區 -->
+        <section class="card upload-card">
+            <h2>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                檔案上傳與管理
+            </h2>
+            <div class="upload-header">
+                <div class="file-input-wrapper">
+                    <button class="btn-upload-trigger">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                        上傳圖片
+                    </button>
+                    <input type="file" id="file-upload" accept=".jpg,.jpeg,.png,.webp" multiple>
+                </div>
+                <button id="btn-clear-all" class="btn-clear" disabled>清空清單</button>
+            </div>
+            
+            <div class="image-list-container" id="image-list-container">
+                <div class="empty-list-placeholder">
+                    尚未上傳任何圖片。支援 JPG, PNG, WEBP 格式。
+                </div>
+            </div>
+        </section>
+
+        <!-- 右上方：參數設定區 -->
+        <section class="card settings-card">
+            <h2>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.5 1z"></path></svg>
+                參數設定
+            </h2>
+            <div class="settings-form">
+                <!-- 功能選擇 -->
+                <div class="form-group">
+                    <label>處理功能</label>
+                    <div class="toggle-group" id="action-toggle-group">
+                        <label>
+                            <input type="radio" name="action" value="crop" checked>
+                            裁切
+                        </label>
+                        <label>
+                            <input type="radio" name="action" value="rotate">
+                            旋轉
+                        </label>
+                        <label>
+                            <input type="radio" name="action" value="grayscale">
+                            灰階
+                        </label>
+                    </div>
+                </div>
+
+                <!-- 旋轉角度 (僅在選擇旋轉時顯示) -->
+                <div class="form-group rotate-options hidden" id="rotate-options-group">
+                    <label>旋轉角度</label>
+                    <div class="toggle-group">
+                        <label>
+                            <input type="radio" name="rotation-angle" value="90" checked>
+                            90 度
+                        </label>
+                        <label>
+                            <input type="radio" name="rotation-angle" value="180">
+                            180 度
+                        </label>
+                        <label>
+                            <input type="radio" name="rotation-angle" value="270">
+                            270 度
+                        </label>
+                    </div>
+                </div>
+
+                <!-- 輸出格式 -->
+                <div class="form-group">
+                    <label>輸出圖片格式</label>
+                    <div class="toggle-group" id="format-toggle-group">
+                        <label>
+                            <input type="radio" name="output-format" value="jpeg" checked>
+                            JPG
+                        </label>
+                        <label>
+                            <input type="radio" name="output-format" value="png">
+                            PNG
+                        </label>
+                        <label>
+                            <input type="radio" name="output-format" value="webp">
+                            WEBP
+                        </label>
+                    </div>
+                </div>
+
+                <!-- 執行按鈕 -->
+                <button type="button" id="btn-execute-process" class="btn-execute" disabled>
+                    <span id="btn-execute-text">執行裁切</span>
+                </button>
+            </div>
+        </section>
+    </main>
+
+    <!-- 下方：處理預覽區 -->
+    <section class="card preview-card">
+        <h2>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+            處理預覽區
+        </h2>
+        <div class="preview-container" id="preview-container">
+            <div class="preview-placeholder" id="preview-placeholder">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+                <span>請先上傳並選擇一張圖片以進行預覽</span>
+            </div>
+            
+            <div class="canvas-wrapper hidden" id="canvas-wrapper">
+                <canvas id="preview-canvas"></canvas>
+            </div>
+        </div>
+        
+        <!-- 狀態列 -->
+        <div class="status-bar">
+            <div class="status-text">
+                <div class="status-indicator" id="status-indicator"></div>
+                <span id="status-message">未載入 Wasm 模組...</span>
+            </div>
+            <div id="status-info"></div>
+        </div>
+    </section>
+
+    <!-- 載入核心 JS 程式碼 -->
+    <script type="module" src="index.js"></script>
+</body>
+</html>
