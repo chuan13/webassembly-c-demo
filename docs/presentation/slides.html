@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebAssembly 圖片批次處理簡報</title>
+    <!-- 引入高質感字型與圖示 -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&family=JetBrains+Mono:wght@400;700&family=Noto+Sans+TC:wght@300;400;700;900&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0b0f19;
+            --card-bg: rgba(17, 24, 39, 0.7);
+            --border-color: rgba(255, 255, 255, 0.08);
+            --primary: #38bdf8;
+            --primary-gradient: linear-gradient(135deg, #38bdf8 0%, #6366f1 100%);
+            --accent-green: #34d399;
+            --accent-orange: #fb923c;
+            --text-main: #f3f4f6;
+            --text-muted: #9ca3af;
+            --code-bg: #0d1117;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', 'Noto Sans TC', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            overflow: hidden;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        /* 頂部進度條 */
+        .progress-bar-container {
+            width: 100%;
+            height: 6px;
+            background: rgba(255, 255, 255, 0.05);
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 10;
+        }
+
+        .progress-bar {
+            height: 100%;
+            background: var(--primary-gradient);
+            width: 0%;
+            transition: width 0.4s cubic-bezier(0.25, 1, 0.5, 1);
+            box-shadow: 0 0 10px rgba(56, 189, 248, 0.5);
+        }
+
+        /* 投影片容器 */
+        .slides-container {
+            flex-grow: 1;
+            position: relative;
+            width: 100%;
+            height: 100%;
+        }
+
+        .slide {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            opacity: 0;
+            visibility: hidden;
+            transform: scale(0.96) translateY(10px);
+            transition: opacity 0.6s cubic-bezier(0.25, 1, 0.5, 1), 
+                        transform 0.6s cubic-bezier(0.25, 1, 0.5, 1),
+                        visibility 0.6s;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 60px 80px;
+            z-index: 1;
+        }
+
+        .slide.active {
+            opacity: 1;
+            visibility: visible;
+            transform: scale(1) translateY(0);
+            z-index: 2;
+        }
+
+        /* 內容佈局 */
+        .slide-content {
+            max-width: 1200px;
+            width: 100%;
+            height: 100%;
+            display: grid;
+            grid-template-rows: auto 1fr;
+            gap: 20px;
+        }
+
+        /* 投影片標題 */
+        h1.slide-title {
+            font-size: 2.2rem;
+            font-weight: 800;
+            background: var(--primary-gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            border-bottom: 2px solid var(--border-color);
+            padding-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        h1.slide-title::before {
+            content: '';
+            display: inline-block;
+            width: 8px;
+            height: 32px;
+            background: var(--primary-gradient);
+            border-radius: 4px;
+        }
+
+        /* 第一頁的主標題樣式 */
+        .cover-layout {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            height: 100%;
+            gap: 30px;
+        }
+
+        .cover-badge {
+            background: rgba(56, 189, 248, 0.1);
+            border: 1px solid rgba(56, 189, 248, 0.3);
+            color: var(--primary);
+            padding: 6px 16px;
+            border-radius: 9999px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(56, 189, 248, 0.4); }
+            70% { box-shadow: 0 0 0 8px rgba(56, 189, 248, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(56, 189, 248, 0); }
+        }
+
+        .cover-title {
+            font-size: 3.8rem;
+            font-weight: 900;
+            line-height: 1.2;
+            background: linear-gradient(135deg, #ffffff 30%, #a5b4fc 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        }
+
+        .cover-subtitle {
+            font-size: 1.5rem;
+            color: var(--text-muted);
+            font-weight: 300;
+            max-width: 800px;
+        }
+
+        .cover-meta {
+            margin-top: 40px;
+            font-size: 0.95rem;
+            color: rgba(255, 255, 255, 0.4);
+            display: flex;
+            gap: 30px;
+        }
+
+        /* 雙欄或網格佈局 */
+        .grid-2col {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 40px;
+            align-items: center;
+        }
+
+        .grid-content {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        /* 精美卡片與毛玻璃 */
+        .glass-card {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 24px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+        }
+
+        .glass-card.highlight {
+            border-left: 4px solid var(--primary);
+        }
+
+        .glass-card.danger {
+            border-left: 4px solid var(--accent-orange);
+            background: rgba(251, 146, 60, 0.05);
+        }
+
+        /* 清單樣式 */
+        ul.slide-list {
+            list-style: none;
+        }
+
+        ul.slide-list li {
+            position: relative;
+            padding-left: 28px;
+            margin-bottom: 16px;
+            font-size: 1.15rem;
+            line-height: 1.6;
+            color: #d1d5db;
+        }
+
+        ul.slide-list li strong {
+            color: #ffffff;
+        }
+
+        ul.slide-list li::before {
+            content: "✦";
+            position: absolute;
+            left: 0;
+            color: var(--primary);
+            font-weight: bold;
+        }
+
+        /* 程式碼區塊 */
+        pre.code-block {
+            background-color: var(--code-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 20px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.95rem;
+            overflow-x: auto;
+            color: #e2e8f0;
+            line-height: 1.5;
+            box-shadow: inset 0 2px 8px rgba(0,0,0,0.8);
+        }
+
+        .keyword { color: #f472b6; }
+        .type { color: #38bdf8; }
+        .function { color: #fb7185; }
+        .comment { color: #6b7280; font-style: italic; }
+        .string { color: #34d399; }
+        .number { color: #fb923c; }
+
+        /* 流程或對比展示區 */
+        .concept-map {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .step-box {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px dashed rgba(255, 255, 255, 0.1);
+            padding: 15px 20px;
+            border-radius: 10px;
+            transition: all 0.3s;
+        }
+
+        .step-box:hover {
+            background: rgba(56, 189, 248, 0.03);
+            border-color: rgba(56, 189, 248, 0.3);
+            transform: translateX(5px);
+        }
+
+        .step-num {
+            background: var(--primary-gradient);
+            color: #ffffff;
+            font-weight: bold;
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.9rem;
+            flex-shrink: 0;
+        }
+
+        /* 記憶體排布網格 */
+        .memory-grid {
+            display: grid;
+            grid-template-columns: repeat(8, 1fr);
+            gap: 6px;
+            margin-top: 15px;
+        }
+
+        .memory-cell {
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 10px 5px;
+            text-align: center;
+            font-size: 0.8rem;
+            font-family: 'JetBrains Mono', monospace;
+            border-radius: 6px;
+        }
+
+        .memory-cell.r { border-color: rgba(239, 68, 68, 0.5); background: rgba(239, 68, 68, 0.1); color: #f87171; }
+        .memory-cell.g { border-color: rgba(34, 197, 94, 0.5); background: rgba(34, 197, 94, 0.1); color: #4ade80; }
+        .memory-cell.b { border-color: rgba(59, 130, 246, 0.5); background: rgba(59, 130, 246, 0.1); color: #60a5fa; }
+        .memory-cell.a { border-color: rgba(156, 163, 175, 0.5); background: rgba(156, 163, 175, 0.1); color: #d1d5db; }
+
+        .memory-label {
+            grid-column: span 4;
+            text-align: center;
+            font-size: 0.9rem;
+            font-weight: 600;
+            padding: 4px;
+            background: rgba(56, 189, 248, 0.1);
+            color: var(--primary);
+            border-radius: 4px;
+            margin-bottom: 4px;
+        }
+
+        /* 控制列 */
+        .controls {
+            padding: 20px 40px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: rgba(11, 15, 25, 0.8);
+            border-top: 1px solid var(--border-color);
+            backdrop-filter: blur(8px);
+            z-index: 10;
+        }
+
+        .slide-counter {
+            font-size: 0.95rem;
+            color: var(--text-muted);
+            font-weight: 600;
+            letter-spacing: 1px;
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 12px;
+        }
+
+        button.control-btn {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border-color);
+            color: var(--text-main);
+            padding: 8px 18px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 0.9rem;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        button.control-btn:hover:not(:disabled) {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: rgba(255, 255, 255, 0.2);
+            color: #ffffff;
+            transform: translateY(-1px);
+        }
+
+        button.control-btn:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+        }
+
+        button.control-btn.primary {
+            background: var(--primary-gradient);
+            border: none;
+            color: #ffffff;
+        }
+
+        button.control-btn.primary:hover {
+            box-shadow: 0 4px 15px rgba(99, 102, 241, 0.4);
+        }
+
+        /* 檔案連結樣式 */
+        .file-link {
+            color: var(--primary);
+            text-decoration: none;
+            border-bottom: 1px dashed var(--primary);
+            transition: all 0.2s;
+        }
+        .file-link:hover {
+            color: #ffffff;
+            border-bottom-style: solid;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- 頂部進度條 -->
+    <div class="progress-bar-container">
+        <div class="progress-bar" id="progressBar"></div>
+    </div>
+
+    <!-- 投影片容器 -->
+    <div class="slides-container" id="slidesContainer">
+
+        <!-- Slide 1: 封面 -->
+        <section class="slide active">
+            <div class="cover-layout">
+                <span class="cover-badge">WebAssembly + C + JS 專案報告</span>
+                <h1 class="cover-title">高效能網頁圖片批次處理</h1>
+                <p class="cover-subtitle">深入探究底層 C 像素轉型、Wasm 數據交換與 AI Agent 閉環開發實踐</p>
+                <div class="cover-meta">
+                    <span>報告人：專案開發團隊</span>
+                    <span>時間：5 分鐘精華版</span>
+                    <span>專案原始碼：<a href="../../image-process.c" class="file-link">image-process.c</a></span>
+                </div>
+            </div>
+        </section>
+
+        <!-- Slide 2: C 側技術 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h1 class="slide-title">C 側底層：`uint8_t` 到 `Pixel` 轉型原理</h1>
+                <div class="grid-2col">
+                    <div class="grid-content">
+                        <div class="glass-card highlight">
+                            <h3 style="margin-bottom: 10px; color: #ffffff;">記憶體佈局的契合</h3>
+                            <ul class="slide-list">
+                                <li><strong>連續一維陣列</strong>：HTML5 Canvas 輸出的像素是 <code>[R,G,B,A, R,G,B,A, ...]</code>，資料型態為 uint8。</li>
+                                <li><strong>零 Padding 結構體</strong>：在 C 中定義 <code>Pixel</code> 包含四個 <code>uint8_t</code>，總大小精確為 4 bytes。編譯器不會在此結構中插入任何填充空間。</li>
+                                <li><strong>指標算術 (Pointer Arithmetic)</strong>：強轉型 <code>Pixel* img = (Pixel*)ptr;</code> 後，<code>img[i]</code> 會自動以 4 bytes 為單位進行偏移，達到直觀、安全的快速像素操作。</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="grid-content">
+                        <pre class="code-block"><span class="comment">// 像素結構體與應用範例</span>
+<span class="keyword">typedef struct</span> {
+    <span class="type">uint8_t</span> r;
+    <span class="type">uint8_t</span> g;
+    <span class="type">uint8_t</span> b;
+    <span class="type">uint8_t</span> a;
+} <span class="type">Pixel</span>;
+
+<span class="keyword">void</span> <span class="function">applyGrayscale</span>(<span class="type">uint8_t</span>* img_ptr, <span class="type">int</span> w, <span class="type">int</span> h) {
+    <span class="type">Pixel</span>* img = (<span class="type">Pixel</span>*)img_ptr; <span class="comment">// 強轉型！</span>
+    <span class="type">int</span> total = w * h;
+    <span class="keyword">for</span> (<span class="type">int</span> i = <span class="number">0</span>; i < total; i++) {
+        <span class="type">uint32_t</span> gray = (img[i].r * <span class="number">77</span> + ...) >> <span class="number">8</span>;
+        img[i].r = img[i].g = img[i].b = gray;
+    }
+}</pre>
+                        <!-- 記憶體視覺化 -->
+                        <div class="memory-label">記憶體中的排布與對齊方式 (4-Byte 對齊)</div>
+                        <div class="memory-grid">
+                            <div class="memory-cell r">R (0)</div>
+                            <div class="memory-cell g">G (1)</div>
+                            <div class="memory-cell b">B (2)</div>
+                            <div class="memory-cell a">A (3)</div>
+                            <div class="memory-cell r">R (4)</div>
+                            <div class="memory-cell g">G (5)</div>
+                            <div class="memory-cell b">B (6)</div>
+                            <div class="memory-cell a">A (7)</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Slide 3: WebAssembly 數據交換 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h1 class="slide-title">WebAssembly 與 JS 的數據傳遞橋梁</h1>
+                <div class="grid-2col">
+                    <div class="grid-content">
+                        <div class="glass-card">
+                            <h3 style="color: var(--primary); margin-bottom: 10px;">線性記憶體模型 (Linear Memory)</h3>
+                            <p style="line-height: 1.6; color: #d1d5db; margin-bottom: 15px;">
+                                Wasm 與 JS 無法直接互傳物件，數據的交換必須透過一塊被雙方共享的巨大記憶體緩衝區（ArrayBuffer）來進行。
+                            </p>
+                            <ul class="slide-list">
+                                <li><strong>HEAPU8 視圖</strong>：JS 透過 <code>wasmModule.HEAPU8</code> 存取該記憶體。</li>
+                                <li><strong>指針的本質</strong>：在 JS 中，C 傳回的指針僅僅是一個代表記憶體偏移量 (Offset) 的<strong>整數 (Number)</strong>。</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="grid-content">
+                        <div class="concept-map">
+                            <div class="step-box">
+                                <div class="step-num">1</div>
+                                <div><strong>分配</strong>: JS 呼叫 <code>_allocMemory(size)</code> 在 Wasm 堆疊上取得空間位址。</div>
+                            </div>
+                            <div class="step-box">
+                                <div class="step-num">2</div>
+                                <div><strong>寫入</strong>: JS 使用 <code>HEAPU8.set(canvasPixels, srcPtr)</code> 拷貝像素資料。</div>
+                            </div>
+                            <div class="step-box">
+                                <div class="step-num">3</div>
+                                <div><strong>執行</strong>: 呼叫 C 導出的 Wasm 函數（如 <code>_cropImage</code>、<code>_rotateImage</code>）。</div>
+                            </div>
+                            <div class="step-box">
+                                <div class="step-num">4</div>
+                                <div><strong>讀取</strong>: JS 藉由 <code>HEAPU8.subarray(dstPtr, dstPtr + dstSize)</code> 取得處理結果。</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Slide 4: 關鍵工程實踐 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h1 class="slide-title">工程挑戰：手動記憶體管理與零拷貝讀取</h1>
+                <div class="grid-2col">
+                    <div class="grid-content">
+                        <pre class="code-block" style="font-size: 0.85rem;"><span class="comment">// 批次處理的安全生命週期設計</span>
+<span class="keyword">let</span> srcPtr = <span class="keyword">null</span>;
+<span class="keyword">let</span> dstPtr = <span class="keyword">null</span>;
+<span class="keyword">try</span> {
+    srcPtr = wasmModule.<span class="function">_allocMemory</span>(srcSize);
+    wasmModule.HEAPU8.<span class="function">set</span>(pixels, srcPtr);
+    
+    <span class="comment">// 執行運算...</span>
+    
+    <span class="comment">// 零拷貝(Zero-copy)讀取：subarray 僅映射不拷貝</span>
+    result = wasmModule.HEAPU8.<span class="function">subarray</span>(dstPtr, dstPtr + dstSize);
+} <span class="keyword">finally</span> {
+    <span class="comment">// 核心防禦：確保釋放 Wasm 記憶體，防止洩漏崩潰！</span>
+    <span class="keyword">if</span> (srcPtr) wasmModule.<span class="function">_freeMemory</span>(srcPtr);
+    <span class="keyword">if</span> (dstPtr) wasmModule.<span class="function">_freeMemory</span>(dstPtr);
+}</pre>
+                    </div>
+                    <div class="grid-content">
+                        <div class="glass-card danger">
+                            <h3 style="color: var(--accent-orange); margin-bottom: 10px;">⚠️ 批次處理的「防溢出」重點</h3>
+                            <p style="line-height: 1.6; color: #d1d5db; margin-bottom: 12px;">
+                                <strong>記憶體洩漏風險</strong>：Wasm 分配的記憶體不受 JS 垃圾回收 (GC) 的控管。在批次處理數十或數百張大圖時，如果有一張圖處理完沒有調用 <code>_freeMemory</code>，記憶體用量將會線性暴增，直接導致瀏覽器頁面閃退崩潰。
+                            </p>
+                            <p style="line-height: 1.6; color: #d1d5db;">
+                                <strong>零拷貝優化</strong>：<code>HEAPU8.subarray()</code> 不會像 <code>slice()</code> 一樣複製記憶體陣列，它僅在現有 ArrayBuffer 上建立一層輕量級的讀取指引，在處理海量像素數據時，能為瀏覽器節省大量的 CPU 拷貝耗時。
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Slide 5: AI Agent 開發新範式 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h1 class="slide-title">AI Agent 開發範式：自動化閉環測試實踐</h1>
+                <div class="grid-2col">
+                    <div class="grid-content">
+                        <div class="glass-card highlight">
+                            <h3 style="color: var(--accent-green); margin-bottom: 10px;">如何有效指揮 AI Agent 實作？</h3>
+                            <ul class="slide-list">
+                                <li><strong>精確邊界規格</strong>：將 C 側定義為純計算函數；JS 側只處理瀏覽器 API、I/O 與打包，這能讓 AI Agent 對任務的職責一目了然。</li>
+                                <li><strong>自主測試工具組</strong>：提供 <code>pnpm dlx serve</code> 讓 Agent 可以自主運行本地伺服器；利用 <code>chrome-devtools-mcp</code> 賦予 Agent 控制瀏覽器與進行行為模擬的能力。</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="grid-content">
+                        <div class="glass-card" style="background: rgba(16, 185, 129, 0.05); border-color: rgba(16, 185, 129, 0.2);">
+                            <h4 style="color: #ffffff; margin-bottom: 8px;">🔄 自動自我修復閉環 (Feedback Loop)</h4>
+                            <p style="line-height: 1.6; color: #d1d5db; font-size: 0.95rem;">
+                                在開發本專案的過程中，Agent 透過自動化工具開啟 Chrome 模擬操作，上傳測試圖檔並觸發 Wasm 計算。
+                            </p>
+                            <p style="line-height: 1.6; color: #d1d5db; font-size: 0.95rem; margin-top: 8px;">
+                                Agent 自主檢測到 Wasm 控制台的「多張圖片寬高比不一致會導致裁切偏移」問題後，無需人類指示，即刻在 <a href="../../index.js" class="file-link">index.js</a> 中補上了自動計算寬高比、浮點數防呆與出錯提示的防禦邏輯，實現了<strong>「編寫 -> 測試 -> 修正 -> 交付」</strong>的零人工干預閉環開發。
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </div>
+
+    <!-- 控制列 -->
+    <div class="controls">
+        <div class="slide-counter" id="slideCounter">SLIDE 1 / 5</div>
+        <div class="btn-group">
+            <button class="control-btn" id="btnPrev" disabled>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+                上一頁
+            </button>
+            <button class="control-btn primary" id="btnNext">
+                下一頁
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+            </button>
+        </div>
+    </div>
+
+    <script>
+        const slides = document.querySelectorAll('.slide');
+        const btnPrev = document.getElementById('btnPrev');
+        const btnNext = document.getElementById('btnNext');
+        const slideCounter = document.getElementById('slideCounter');
+        const progressBar = document.getElementById('progressBar');
+        
+        let currentSlideIndex = 0;
+        const totalSlides = slides.length;
+
+        function updateSlides() {
+            slides.forEach((slide, index) => {
+                if (index === currentSlideIndex) {
+                    slide.classList.add('active');
+                } else {
+                    slide.classList.remove('active');
+                }
+            });
+
+            // 更新控制按鈕狀態
+            btnPrev.disabled = currentSlideIndex === 0;
+            if (currentSlideIndex === totalSlides - 1) {
+                btnNext.innerHTML = `結束簡報 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
+            } else {
+                btnNext.innerHTML = `下一頁 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>`;
+            }
+
+            // 更新計數器與進度條
+            slideCounter.textContent = `SLIDE ${currentSlideIndex + 1} / ${totalSlides}`;
+            const progress = ((currentSlideIndex + 1) / totalSlides) * 100;
+            progressBar.style.width = `${progress}%`;
+        }
+
+        function nextSlide() {
+            if (currentSlideIndex < totalSlides - 1) {
+                currentSlideIndex++;
+                updateSlides();
+            }
+        }
+
+        function prevSlide() {
+            if (currentSlideIndex > 0) {
+                currentSlideIndex--;
+                updateSlides();
+            }
+        }
+
+        // 按鈕點擊事件
+        btnPrev.addEventListener('click', prevSlide);
+        btnNext.addEventListener('click', () => {
+            if (currentSlideIndex === totalSlides - 1) {
+                alert('簡報已播放完畢！您可以按 F11 進入瀏覽器全螢幕模式，或者使用 Ctrl+P 列印此投影片為 PDF 檔案。');
+            } else {
+                nextSlide();
+            }
+        });
+
+        // 鍵盤控制支援
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') {
+                e.preventDefault();
+                nextSlide();
+            } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
+                e.preventDefault();
+                prevSlide();
+            }
+        });
+
+        // 初始化
+        updateSlides();
+    </script>
+</body>
+</html>

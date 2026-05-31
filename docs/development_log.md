@@ -38,6 +38,10 @@
 - **實作內容**：在 `README.md` 中新增「實作模式與協作流程」章節。
 - **關鍵點**：詳細說明由人類主導規格與 API 設計、AI Agent (Antigravity) 進行程式碼實作與整合的開發模式，為未來參與此專案的 AI 代理人提供清晰的背景脈絡。
 
+### 階段七：簡報與投影片產出 (`docs/presentation/`)
+- **實作內容**：建立簡報發想檔案 `suggestions.md`、Markdown 格式投影片 `slides.md`，並使用 Vanilla JS & CSS 設計了動態、美觀且具備進度條與鍵盤控制功能的簡報網頁 `slides.html`。
+- **關鍵點**：在文檔與 HTML 簡報中全面使用相對路徑連結（例如 `[image-process.c](../../image-process.c)`），確保所有環境下連結點擊之相容性，並提供極致暗色科技美學（Dark Mode）與一鍵列印成 PDF 的功能。
+
 ---
 
 ## 2. 遇到的阻礙與解決方案
