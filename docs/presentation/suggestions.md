@@ -40,8 +40,10 @@
     > [!IMPORTANT]
     > **Wasm 記憶體不會被 JavaScript 的垃圾回收 (GC) 自動釋放！**  
     > 批次處理（例如處理 100 張圖）時，如果在迴圈中調用 `_allocMemory` 而沒有成對地在 `finally` 區塊調用 `_freeMemory`，瀏覽器的分頁會立刻因為記憶體洩漏 (Memory Leak) 而崩潰。這是一個非常真實且重要的工程實踐挑戰。
-*   **無拷貝性能優化 (Zero-copy View)**：
-    我們使用 `wasmModule.HEAPU8.subarray(dstPtr, dstPtr + dstSize)`。`subarray` 與 `slice` 不同，它**不會複製記憶體**，而是建立一個輕量級的 TypedArray 視圖，直接映射到 Wasm 的線性記憶體中。這使我們在讀取 Wasm 輸出時達到零拷貝 (Zero-copy) 的極致性能。
+*   **Wasm 邊界的零拷貝讀取 (Zero-copy View)**：
+    我們使用 `wasmModule.HEAPU8.subarray(dstPtr, dstPtr + dstSize)`。`subarray` 與 `slice` 不同，它**不會複製記憶體**，而是建立一個輕量級的 TypedArray 視圖，直接映射到 Wasm 的線性記憶體中。這使得 JS 能以零拷貝 (Zero-copy) 的方式讀取 Wasm 內部的運算結果。
+*   **Canvas 端的必要複製（技術細節）**：
+    值得注意的是，當 JS 欲將像素畫回 Canvas 時，因為 `new ImageData()` 要求的傳入型別必須為 `Uint8ClampedArray`（而 `HEAPU8` 是 `Uint8Array`），且為了防止 Wasm 記憶體增長（Memory Growth）或釋放時導致 Canvas 的記憶體參照失效，我們仍須執行一次 `new Uint8ClampedArray(resultPixels)` 進行深拷貝。這雖非「全程零拷貝」，但 Wasm-to-JS 邊界的零拷貝讀取依然大幅省去了跨環境的資料拷貝開銷。
 
 ### 3. AI Agent 實作：閉環自動化測試 (Feedback Loop)
 給予 Agent `serve` 指令和 `chrome-devtools-mcp` 可以提煉為 **「Agent 自動化閉環 (Feedback Loop)」** 的概念：

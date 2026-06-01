@@ -56,9 +56,9 @@ void applyGrayscale(uint8_t* img_ptr, int w, int h) {
 *   **必須**使用 `try-finally` 確保在每次處理完單張圖片後，手動呼叫 `_freeMemory(ptr)`。
 *   否則在批次處理數百張圖片時，會迅速發生**記憶體洩漏 (Memory Leak)** 導致瀏覽器分頁崩潰。
 
-### 2. 零拷貝 (Zero-copy) 讀取
-*   `HEAPU8.subarray()` 僅建立一個指向現有記憶體段的視圖，**不進行任何數據拷貝**。
-*   這使得處理後的像素可以直接傳入 `new ImageData()`，發揮極致性能。
+### 2. 零拷貝 (Zero-copy) 讀取與渲染複製
+*   **Wasm 邊界零拷貝**：使用 `HEAPU8.subarray()` 僅建立指向現有 Wasm 記憶體段的視圖，**不進行實質資料拷貝**，以極速跨邊界讀取運算結果。
+*   **Canvas 端必要複製**：為了匹配 `ImageData` 所需的 `Uint8ClampedArray` 型別，並防止 Wasm 記憶體重新分配（Memory Growth）時導致 Canvas 參照失效，JS 仍需透過 `new Uint8ClampedArray(resultPixels)` 進行一次複製。
 
 <!-- slide -->
 

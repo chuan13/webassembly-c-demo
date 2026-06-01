@@ -550,7 +550,7 @@
                                 <strong>記憶體洩漏風險</strong>：Wasm 分配的記憶體不受 JS 垃圾回收 (GC) 的控管。在批次處理數十或數百張大圖時，如果有一張圖處理完沒有調用 <code>_freeMemory</code>，記憶體用量將會線性暴增，直接導致瀏覽器頁面閃退崩潰。
                             </p>
                             <p style="line-height: 1.6; color: #d1d5db;">
-                                <strong>零拷貝優化</strong>：<code>HEAPU8.subarray()</code> 不會像 <code>slice()</code> 一樣複製記憶體陣列，它僅在現有 ArrayBuffer 上建立一層輕量級的讀取指引，在處理海量像素數據時，能為瀏覽器節省大量的 CPU 拷貝耗時。
+                                <strong>Wasm 邊界零拷貝</strong>：<code>HEAPU8.subarray()</code> 僅在現有 ArrayBuffer 上建立視圖而不進行資料拷貝，實現了 Wasm 到 JS 邊界的零拷貝讀取。但在畫回 Canvas 時，因 <code>ImageData</code> 要求的 <code>Uint8ClampedArray</code> 型別限制，且為防範 Wasm 記憶體增長（Memory Growth）導致引用失效，JS 仍須執行一次深拷貝。
                             </p>
                         </div>
                     </div>
